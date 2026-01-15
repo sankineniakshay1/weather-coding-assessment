@@ -1,0 +1,141 @@
+@page
+@model WeatherExercise.Pages.IndexModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dallas Historical Weather</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; margin: 24px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background: #f4f4f4; text-align: left; }
+    tr:hover { background: #fafafa; }
+    .error { color: #b00020; font-weight: 600; }
+    .controls { margin: 12px 0 16px; }
+    .details { margin-top: 12px; padding: 10px; border: 1px solid #ddd; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <h2>Dallas Historical Weather</h2>
+  <div class="muted">
+    Data comes from Open-Meteo Historical Weather API for Dallas, TX. Input dates are read from <code>dates.txt</code>.
+  </div>
+
+  <div id="app" style="margin-top:16px">
+    <div id="status">Loading...</div>
+  </div>
+
+  <script>
+  (async function () {
+    const app = document.getElementById('app');
+
+    function renderError(message) {
+      app.innerHTML = `<div class="error">Error: ${message}</div>`;
+    }
+
+    function render(data) {
+      let sortKey = 'date';
+      let sortDir = 'asc';
+      let minTempFilter = '';
+
+      function sortRows(rows) {
+        return [...rows].sort((a, b) => {
+          const va = (sortKey === 'date') ? (a.date || '') : (a[sortKey] ?? -1e9);
+          const vb = (sortKey === 'date') ? (b.date || '') : (b[sortKey] ?? -1e9);
+          const cmp = (va > vb) ? 1 : (va < vb) ? -1 : 0;
+          return sortDir === 'asc' ? cmp : -cmp;
+        });
+      }
+
+      function filterRows(rows) {
+        const t = parseFloat(minTempFilter);
+        if (Number.isNaN(t)) return rows;
+        return rows.filter(r => (r.minTempC ?? -1e9) >= t);
+      }
+
+      function draw(selectedIndex) {
+        const rows = sortRows(filterRows(data));
+        const selected = (selectedIndex != null) ? rows[selectedIndex] : null;
+
+        app.innerHTML = `
+          <div class="controls">
+            <label>Min temp filter (°C): </label>
+            <input id="minTemp" value="${minTempFilter}" style="width:120px" />
+            <span style="margin-left:16px"></span>
+            <button id="sortDate">Sort Date</button>
+            <button id="sortMin">Sort Min</button>
+            <button id="sortMax">Sort Max</button>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Min (°C)</th>
+                <th>Max (°C)</th>
+                <th>Precip (mm)</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((r, i) => `
+                <tr data-i="${i}" style="cursor:pointer">
+                  <td>${r.date ?? '-'}</td>
+                  <td>${r.minTempC ?? '-'}</td>
+                  <td>${r.maxTempC ?? '-'}</td>
+                  <td>${r.precipMm ?? '-'}</td>
+                  <td>${r.status}${r.message ? ' - ' + r.message : ''}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="details">
+            <div style="font-weight:600">Details</div>
+            ${selected ? `
+              <div><b>Input:</b> ${selected.input}</div>
+              <div><b>Date:</b> ${selected.date ?? '-'}</div>
+              <div><b>Min:</b> ${selected.minTempC ?? '-'}</div>
+              <div><b>Max:</b> ${selected.maxTempC ?? '-'}</div>
+              <div><b>Precip:</b> ${selected.precipMm ?? '-'}</div>
+              <div><b>Status:</b> ${selected.status}</div>
+              <div><b>Message:</b> ${selected.message ?? '-'}</div>
+            ` : `<div class="muted">Click a row to show details for that date.</div>`}
+          </div>
+        `;
+
+        document.getElementById('minTemp').addEventListener('input', (e) => {
+          minTempFilter = e.target.value;
+          draw(null);
+        });
+
+        document.getElementById('sortDate').onclick = () => { sortKey = 'date'; sortDir = (sortDir === 'asc' ? 'desc' : 'asc'); draw(null); };
+        document.getElementById('sortMin').onclick  = () => { sortKey = 'minTempC'; sortDir = (sortDir === 'asc' ? 'desc' : 'asc'); draw(null); };
+        document.getElementById('sortMax').onclick  = () => { sortKey = 'maxTempC'; sortDir = (sortDir === 'asc' ? 'desc' : 'asc'); draw(null); };
+
+        document.querySelectorAll('tr[data-i]').forEach(tr => {
+          tr.addEventListener('click', () => draw(parseInt(tr.getAttribute('data-i'))));
+        });
+      }
+
+      draw(null);
+    }
+
+    try {
+      const res = await fetch('/api/weather');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      render(data);
+    } catch (e) {
+      renderError(e.message || 'Unknown error');
+    }
+  })();
+  </script>
+</body>
+</html>
